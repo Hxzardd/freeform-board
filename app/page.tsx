@@ -1,65 +1,510 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { DragInfo, Group, HistoryState, Pin } from "@/types/pin";
+import Toolbar from "@/components/Toolbar";
+import BoardCanvas from "@/components/BoardCanvas";
+
+const STORAGE_KEY = "freeform-board-history";
+const GROUPS_STORAGE_KEY = "freeform-board-groups";
 
 export default function Home() {
+  const [history, setHistory] = useState<HistoryState>({
+    past: [],
+    present: [],
+    future: [],
+  });
+
+  const pins = history.present;
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [dragInfo, setDragInfo] = useState<DragInfo>(null);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        setHistory(JSON.parse(saved));
+      } catch {
+        console.error("Failed to load history");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const historyStr = JSON.stringify(history);
+      // check if data is too large (localStorage limit is usually 5-10MB)
+      if (historyStr.length > 4 * 1024 * 1024) {
+        console.warn("History too large, saving only current state");
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          past: [],
+          present: history.present,
+          future: [],
+        }));
+        return;
+      }
+      localStorage.setItem(STORAGE_KEY, historyStr);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "QuotaExceededError") {
+        console.warn("localStorage full, saving only current state");
+        // save only current state without calling setHistory (to avoid infinite loop)
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            past: [],
+            present: history.present,
+            future: [],
+          }));
+        } catch (e) {
+          console.error("Failed to save even minimal history", e);
+        }
+      } else {
+        console.error("Failed to save history", error);
+      }
+    }
+  }, [history]);
+
+  useEffect(() => {
+    const savedGroups = localStorage.getItem(GROUPS_STORAGE_KEY);
+    if (savedGroups) {
+      try {
+        setGroups(JSON.parse(savedGroups));
+      } catch {
+        console.error("Failed to load groups");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups));
+  }, [groups]);
+
+  useEffect(() => {
+    const preventBrowserZoom = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener("wheel", preventBrowserZoom, {
+      passive: false,
+    });
+
+    return () => {
+      window.removeEventListener("wheel", preventBrowserZoom);
+    };
+  }, []);
+
+  // limit history to last 50 states to prevent localStorage overflow
+  function commit(newPins: Pin[]) {
+    setHistory((prev) => {
+      const newPast = [...prev.past, prev.present];
+      const limitedPast = newPast.slice(-50);
+      return {
+        past: limitedPast,
+        present: newPins,
+        future: [],
+      };
+    });
+  }
+
+  function addTextPin() {
+    const text = prompt("Enter pin text");
+    if (text === null) return;
+
+    commit([
+      ...pins,
+      {
+        id: crypto.randomUUID(),
+        x: 120,
+        y: 120,
+        type: "text",
+        text: text.trim() || "New Pin",
+      },
+    ]);
+  }
+
+  function addImageFromUrl() {
+    const url = prompt("Enter image URL");
+    if (!url) return;
+
+    commit([
+      ...pins,
+      {
+        id: crypto.randomUUID(),
+        x: 140,
+        y: 140,
+        type: "image",
+        imageSrc: url,
+      },
+    ]);
+  }
+
+  function addListPin() {
+    const firstItem = prompt("First list item");
+    if (firstItem === null) return;
+
+    commit([
+      ...pins,
+      {
+        id: crypto.randomUUID(),
+        x: 150,
+        y: 150,
+        type: "list",
+        items: firstItem.trim() ? [firstItem] : [],
+      },
+    ]);
+  }
+
+  function addListItem(pinId: string) {
+    const item = prompt("Add list item");
+    if (!item?.trim()) return;
+
+    commit(
+      pins.map((p) =>
+        p.id === pinId
+          ? { ...p, items: [...(p.items || []), item] }
+          : p
+      )
+    );
+  }
+
+  function deleteListItem(pinId: string, index: number) {
+    commit(
+      pins.map((p) =>
+        p.id === pinId
+          ? { ...p, items: p.items?.filter((_, i) => i !== index) }
+          : p
+      )
+    );
+  }
+
+  function editListItem(pinId: string, index: number) {
+    const pin = pins.find((p) => p.id === pinId);
+    if (!pin || !pin.items) return;
+
+    const currentItem = pin.items[index];
+    const newItem = prompt("Edit list item", currentItem);
+    if (newItem === null || !newItem.trim()) return;
+
+    commit(
+      pins.map((p) =>
+        p.id === pinId
+          ? {
+              ...p,
+              items: p.items?.map((item, i) => (i === index ? newItem.trim() : item)),
+            }
+          : p
+      )
+    );
+  }
+
+  function handleLocalImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      commit([
+        ...pins,
+        {
+          id: crypto.randomUUID(),
+          x: 160,
+          y: 160,
+          type: "image",
+          imageSrc: reader.result as string,
+        },
+      ]);
+    };
+
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function deletePin(pinId: string) {
+    commit(pins.filter((p) => p.id !== pinId));
+  }
+
+  function editPin(pin: Pin) {
+    if (pin.type === "text") {
+      const newText = prompt("Edit text", pin.text);
+      if (newText === null) return;
+
+      const tagInput = prompt(
+        "Edit tags (comma separated)",
+        pin.tags?.join(", ") || ""
+      );
+
+      const tags =
+        tagInput?.split(",").map((t) => t.trim()).filter(Boolean) || [];
+
+      commit(
+        pins.map((p) =>
+          p.id === pin.id ? { ...p, text: newText, tags, groupId: p.groupId } : p
+        )
+      );
+    }
+
+    if (pin.type === "image") {
+      const newUrl = prompt("Edit image URL", pin.imageSrc);
+      if (newUrl === null) return;
+
+      const tagInput = prompt(
+        "Edit tags (comma separated)",
+        pin.tags?.join(", ") || ""
+      );
+
+      const tags =
+        tagInput?.split(",").map((t) => t.trim()).filter(Boolean) || [];
+
+      commit(
+        pins.map((p) =>
+          p.id === pin.id ? { ...p, imageSrc: newUrl, tags, groupId: p.groupId } : p
+        )
+      );
+    }
+
+    if (pin.type === "list") {
+      const currentItems = pin.items?.join("\n") || "";
+      const newItemsText = prompt(
+        "Edit list items (one per line):",
+        currentItems
+      );
+      
+      if (newItemsText !== null) {
+        const newItems = newItemsText
+          .split("\n")
+          .map((item) => item.trim())
+          .filter(Boolean);
+
+        const tagInput = prompt(
+          "Edit tags (comma separated)",
+          pin.tags?.join(", ") || ""
+        );
+
+        const tags =
+          tagInput?.split(",").map((t) => t.trim()).filter(Boolean) || [];
+
+        commit(
+          pins.map((p) =>
+            p.id === pin.id ? { ...p, items: newItems, tags, groupId: p.groupId } : p
+          )
+        );
+      } else {
+        const tagInput = prompt(
+          "Edit tags (comma separated)",
+          pin.tags?.join(", ") || ""
+        );
+
+        if (tagInput !== null) {
+          const tags =
+            tagInput?.split(",").map((t) => t.trim()).filter(Boolean) || [];
+
+          commit(
+            pins.map((p) =>
+              p.id === pin.id ? { ...p, tags, groupId: p.groupId } : p
+            )
+          );
+        }
+      }
+    }
+
+    // get latest pin data after edits for group assignment
+    const updatedPins = history.present;
+    const currentPin = updatedPins.find((p) => p.id === pin.id) || pin;
+    
+    if (groups.length > 0) {
+      const groupNames = groups.map((g) => g.name).join(", ");
+      const currentGroup = groups.find((g) => g.id === currentPin.groupId);
+      const assignGroup = confirm(
+        `Manage group? Current: ${currentGroup ? currentGroup.name : "None"}\nAvailable: ${groupNames}\n\nClick OK to change, Cancel to skip.`
+      );
+
+      if (assignGroup) {
+        const options = ["Remove group", ...groups.map((g) => g.name)].join("\n");
+        const selected = prompt(`Enter group name or "Remove group":\n${options}`);
+        if (selected) {
+          if (selected.trim().toLowerCase() === "remove group") {
+            commit(
+              updatedPins.map((p) =>
+                p.id === pin.id ? { ...p, groupId: undefined } : p
+              )
+            );
+          } else {
+            const group = groups.find((g) => g.name === selected.trim());
+            if (group) {
+              commit(
+                updatedPins.map((p) =>
+                  p.id === pin.id ? { ...p, groupId: group.id } : p
+                )
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function removeGroupFromPin(pinId: string) {
+    commit(
+      pins.map((p) =>
+        p.id === pinId ? { ...p, groupId: undefined } : p
+      )
+    );
+  }
+
+  function addGroup() {
+    const name = prompt("Group name");
+    if (!name) return;
+
+    setGroups((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), name },
+    ]);
+  }
+
+  function assignPinToGroup(pinId: string) {
+    if (groups.length === 0) {
+      alert("Create a group first");
+      return;
+    }
+
+    const groupNames = groups.map((g) => g.name).join(", ");
+    const selected = prompt(`Assign to group: ${groupNames}`);
+
+    const group = groups.find((g) => g.name === selected);
+    if (!group) return;
+
+    commit(
+      pins.map((p) =>
+        p.id === pinId ? { ...p, groupId: group.id } : p
+      )
+    );
+  }
+
+  function handlePinMouseDown(e: React.MouseEvent<HTMLDivElement>, pin: Pin) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setDragInfo({
+      pinId: pin.id,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+    });
+  }
+
+  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (!dragInfo) return;
+
+    setHistory((prev) => ({
+      ...prev,
+      present: prev.present.map((p) =>
+        p.id === dragInfo.pinId
+          ? {
+              ...p,
+              x: e.clientX - dragInfo.offsetX,
+              y: e.clientY - dragInfo.offsetY,
+            }
+          : p
+      ),
+    }));
+  }
+
+  function handleMouseUp() {
+    if (!dragInfo) return;
+    commit(pins);
+    setDragInfo(null);
+  }
+
+  function handleCanvasMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    if (dragInfo) return;
+
+    setIsPanning(true);
+    setPanStart({
+      x: e.clientX - offset.x,
+      y: e.clientY - offset.y,
+    });
+  }
+
+  function handleCanvasMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (!isPanning || dragInfo) return;
+
+    setOffset({
+      x: e.clientX - panStart.x,
+      y: e.clientY - panStart.y,
+    });
+  }
+
+  function handleCanvasMouseUp() {
+    setIsPanning(false);
+  }
+
+  function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+
+    setScale((s) => Math.min(Math.max(s - e.deltaY * 0.001, 0.3), 3));
+  }
+
+  function zoomIn() {
+    setScale((s) => Math.min(s + 0.1, 3));
+  }
+
+  function zoomOut() {
+    setScale((s) => Math.max(s - 0.1, 0.3));
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div
+      className="w-screen h-screen bg-[#faf9f6] relative overflow-hidden"
+      onMouseMove={(e) => {
+        handleMouseMove(e);
+        handleCanvasMouseMove(e);
+      }}
+      onMouseUp={() => {
+        handleMouseUp();
+        handleCanvasMouseUp();
+      }}
+    >
+      <Toolbar
+        onAddText={addTextPin}
+        onAddImageUrl={addImageFromUrl}
+        onAddImageFile={() => fileInputRef.current?.click()}
+        onAddList={addListPin}
+        onAddGroup={addGroup}
+        onUndo={() => {}}
+        onRedo={() => {}}
+        zoom={scale}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+      />
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleLocalImageSelect}
+      />
+
+      <BoardCanvas
+        pins={pins}
+        groups={groups}
+        scale={scale}
+        offsetX={offset.x}
+        offsetY={offset.y}
+        onPinMouseDown={handlePinMouseDown}
+        onCanvasMouseDown={handleCanvasMouseDown}
+        onWheelZoom={handleWheel}
+        onDeletePin={deletePin}
+        onEditPin={editPin}
+        onAddListItem={addListItem}
+        onEditListItem={editListItem}
+        onDeleteListItem={deleteListItem}
+        onRemoveGroupFromPin={removeGroupFromPin}
+      />
     </div>
   );
 }
