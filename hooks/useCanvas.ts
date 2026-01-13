@@ -13,6 +13,7 @@ export function useCanvas({ pins, updatePins, commit }: UseCanvasProps) {
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [dragInfo, setDragInfo] = useState<DragInfo>(null);
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     const preventBrowserZoom = (e: WheelEvent) => {
@@ -30,12 +31,30 @@ export function useCanvas({ pins, updatePins, commit }: UseCanvasProps) {
     };
   }, []);
 
+  function zoomAtPoint(mouseX: number, mouseY: number, newScale: number) {
+    const oldScale = scale;
+    const pointX = (mouseX - offset.x) / oldScale;
+    const pointY = (mouseY - offset.y) / oldScale;
+    
+    const newOffsetX = mouseX - pointX * newScale;
+    const newOffsetY = mouseY - pointY * newScale;
+    
+    setScale(newScale);
+    setOffset({ x: newOffsetX, y: newOffsetY });
+  }
+
   function zoomIn() {
-    setScale((s) => Math.min(s + 0.1, 3));
+    const mouseX = lastMousePos.x || window.innerWidth / 2;
+    const mouseY = lastMousePos.y || window.innerHeight / 2;
+    const newScale = Math.min(scale + 0.1, 3);
+    zoomAtPoint(mouseX, mouseY, newScale);
   }
 
   function zoomOut() {
-    setScale((s) => Math.max(s - 0.1, 0.3));
+    const mouseX = lastMousePos.x || window.innerWidth / 2;
+    const mouseY = lastMousePos.y || window.innerHeight / 2;
+    const newScale = Math.max(scale - 0.1, 0.3);
+    zoomAtPoint(mouseX, mouseY, newScale);
   }
 
   function getViewportCenter() {
@@ -93,6 +112,8 @@ export function useCanvas({ pins, updatePins, commit }: UseCanvasProps) {
   }
 
   function handleCanvasMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    setLastMousePos({ x: e.clientX, y: e.clientY });
+    
     if (!isPanning || dragInfo) return;
 
     setOffset({
@@ -108,7 +129,13 @@ export function useCanvas({ pins, updatePins, commit }: UseCanvasProps) {
   function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
-    setScale((s) => Math.min(Math.max(s - e.deltaY * 0.001, 0.3), 3));
+    
+    const mouseX = e.clientX;
+    const mouseY = e.clientY;
+    setLastMousePos({ x: mouseX, y: mouseY });
+    
+    const newScale = Math.min(Math.max(scale - e.deltaY * 0.001, 0.3), 3);
+    zoomAtPoint(mouseX, mouseY, newScale);
   }
 
   return {
