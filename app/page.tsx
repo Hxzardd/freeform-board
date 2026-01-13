@@ -8,33 +8,18 @@ import { useGroups } from "@/hooks/useGroups";
 import { useCanvas } from "@/hooks/useCanvas";
 import { usePinOperations } from "@/hooks/usePinOperations";
 import { useGroupOperations } from "@/hooks/useGroupOperations";
-import { useDragAndPan } from "@/hooks/useDragAndPan";
 
 export default function Home() {
   const { pins, commit, updatePins } = usePins();
   const { groups, setGroups } = useGroups();
-  const {
-    scale,
-    offset,
-    isPanning,
-    panStart,
-    dragInfo,
-    setScale,
-    setOffset,
-    setIsPanning,
-    setPanStart,
-    setDragInfo,
-    zoomIn,
-    zoomOut,
-    getViewportCenter,
-  } = useCanvas();
+  const canvas = useCanvas({ pins, updatePins, commit });
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const pinOperations = usePinOperations({
     pins,
     commit,
-    getViewportCenter,
+    getViewportCenter: canvas.getViewportCenter,
   });
 
   const groupOperations = useGroupOperations({
@@ -44,32 +29,16 @@ export default function Home() {
     commit,
   });
 
-  const dragAndPan = useDragAndPan({
-    pins,
-    dragInfo,
-    scale,
-    offset,
-    isPanning,
-    panStart,
-    setDragInfo,
-    setIsPanning,
-    setPanStart,
-    setOffset,
-    setScale,
-    updatePins,
-    commit,
-  });
-
   return (
     <div
       className="w-screen h-screen bg-[#faf9f6] relative overflow-hidden"
       onMouseMove={(e) => {
-        dragAndPan.handleMouseMove(e);
-        dragAndPan.handleCanvasMouseMove(e);
+        canvas.handleMouseMove(e);
+        canvas.handleCanvasMouseMove(e);
       }}
       onMouseUp={() => {
-        dragAndPan.handleMouseUp();
-        dragAndPan.handleCanvasMouseUp();
+        canvas.handleMouseUp();
+        canvas.handleCanvasMouseUp();
       }}
     >
       <Toolbar
@@ -80,9 +49,9 @@ export default function Home() {
         onManageGroups={groupOperations.manageGroups}
         onUndo={() => {}}
         onRedo={() => {}}
-        zoom={scale}
-        onZoomIn={zoomIn}
-        onZoomOut={zoomOut}
+        zoom={canvas.scale}
+        onZoomIn={canvas.zoomIn}
+        onZoomOut={canvas.zoomOut}
       />
 
       <input
@@ -96,12 +65,12 @@ export default function Home() {
       <BoardCanvas
         pins={pins}
         groups={groups}
-        scale={scale}
-        offsetX={offset.x}
-        offsetY={offset.y}
-        onPinMouseDown={(e, pin) => dragAndPan.handlePinMouseDown(e, pin)}
-        onCanvasMouseDown={dragAndPan.handleCanvasMouseDown}
-        onWheelZoom={dragAndPan.handleWheel}
+        scale={canvas.scale}
+        offsetX={canvas.offset.x}
+        offsetY={canvas.offset.y}
+        onPinMouseDown={canvas.handlePinMouseDown}
+        onCanvasMouseDown={canvas.handleCanvasMouseDown}
+        onWheelZoom={canvas.handleWheel}
         onDeletePin={pinOperations.deletePin}
         onEditPin={(pin) => pinOperations.editPin(pin, groups)}
         onAddListItem={pinOperations.addListItem}
