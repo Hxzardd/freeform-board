@@ -10,7 +10,7 @@ import { usePinOperations } from "@/hooks/usePinOperations";
 import { useGroupOperations } from "@/hooks/useGroupOperations";
 
 export default function Home() {
-  const { pins, commit, updatePins } = usePins();
+  const { pins, commit, updatePins, undo, redo } = usePins();
   const { groups, setGroups } = useGroups();
   const canvas = useCanvas({ pins, updatePins, commit });
 
@@ -47,8 +47,8 @@ export default function Home() {
         onAddImageFile={() => fileInputRef.current?.click()}
         onAddList={pinOperations.addListPin}
         onManageGroups={groupOperations.manageGroups}
-        onUndo={() => {}}
-        onRedo={() => {}}
+        onUndo={undo}
+        onRedo={redo}
         zoom={canvas.scale}
         onZoomIn={canvas.zoomIn}
         onZoomOut={canvas.zoomOut}
