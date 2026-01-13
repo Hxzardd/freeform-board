@@ -5,7 +5,7 @@ type ToolbarProps = {
   onAddImageUrl: () => void;
   onAddImageFile: () => void;
   onAddList: () => void;
-  onAddGroup: () => void;
+  onManageGroups: () => void;
   onUndo: () => void;
   onRedo: () => void;
   zoom: number;
@@ -18,7 +18,7 @@ export default function Toolbar({
   onAddImageUrl,
   onAddImageFile,
   onAddList,
-  onAddGroup,
+  onManageGroups,
   onUndo,
   onRedo,
   zoom,
@@ -102,7 +102,7 @@ export default function Toolbar({
           <button onClick={onAddList} className="btn">Add List</button>
           <button onClick={onAddImageUrl} className="btn">Image URL</button>
           <button onClick={onAddImageFile} className="btn">Image File</button>
-          <button onClick={onAddGroup} className="btn">Create Group</button>
+          <button onClick={onManageGroups} className="btn">Manage Groups</button>
 
           <div className="flex items-center justify-between pt-2 mt-1 border-t border-gray-300/50">
             <button onClick={onZoomOut} className="btn">−</button>
