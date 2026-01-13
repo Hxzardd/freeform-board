@@ -49,8 +49,8 @@ export default function BoardCanvas({
         style={{
           transform: `translate(${offsetX}px, ${offsetY}px) scale(${scale})`,
           transformOrigin: "0 0",
-          width: "100000px",
-          height: "100000px",
+          width: "999999px",
+          height: "999999px",
         }}
       >
         {pins.map((pin) => (

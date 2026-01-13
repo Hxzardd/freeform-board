@@ -99,7 +99,7 @@ export default function Home() {
     };
   }, []);
 
-  // limit history to last 50 states to prevent localStorage overflow
+  // Keep history limited to prevent localStorage issues
   function commit(newPins: Pin[]) {
     setHistory((prev) => {
       const newPast = [...prev.past, prev.present];
@@ -112,16 +112,28 @@ export default function Home() {
     });
   }
 
+  function getViewportCenter() {
+    const screenCenterX = window.innerWidth / 2;
+    const screenCenterY = window.innerHeight / 2;
+    
+    // Account for zoom and pan to get the actual center position
+    const centerX = (screenCenterX - offset.x) / scale;
+    const centerY = (screenCenterY - offset.y) / scale;
+    
+    return { x: centerX, y: centerY };
+  }
+
   function addTextPin() {
     const text = prompt("Enter pin text");
     if (text === null) return;
 
+    const center = getViewportCenter();
     commit([
       ...pins,
       {
         id: crypto.randomUUID(),
-        x: 120,
-        y: 120,
+        x: center.x,
+        y: center.y,
         type: "text",
         text: text.trim() || "New Pin",
       },
@@ -132,12 +144,13 @@ export default function Home() {
     const url = prompt("Enter image URL");
     if (!url) return;
 
+    const center = getViewportCenter();
     commit([
       ...pins,
       {
         id: crypto.randomUUID(),
-        x: 140,
-        y: 140,
+        x: center.x,
+        y: center.y,
         type: "image",
         imageSrc: url,
       },
@@ -148,12 +161,13 @@ export default function Home() {
     const firstItem = prompt("First list item");
     if (firstItem === null) return;
 
+    const center = getViewportCenter();
     commit([
       ...pins,
       {
         id: crypto.randomUUID(),
-        x: 150,
-        y: 150,
+        x: center.x,
+        y: center.y,
         type: "list",
         items: firstItem.trim() ? [firstItem] : [],
       },
@@ -209,12 +223,13 @@ export default function Home() {
 
     const reader = new FileReader();
     reader.onload = () => {
+      const center = getViewportCenter();
       commit([
         ...pins,
         {
           id: crypto.randomUUID(),
-          x: 160,
-          y: 160,
+          x: center.x,
+          y: center.y,
           type: "image",
           imageSrc: reader.result as string,
         },
@@ -387,16 +402,24 @@ export default function Home() {
   }
 
   function handlePinMouseDown(e: React.MouseEvent<HTMLDivElement>, pin: Pin) {
-    const rect = e.currentTarget.getBoundingClientRect();
+    // Convert mouse position to transformed coordinates
+    const mouseX = (e.clientX - offset.x) / scale;
+    const mouseY = (e.clientY - offset.y) / scale;
+    
+    // Calculate offset from pin's position
     setDragInfo({
       pinId: pin.id,
-      offsetX: e.clientX - rect.left,
-      offsetY: e.clientY - rect.top,
+      offsetX: mouseX - pin.x,
+      offsetY: mouseY - pin.y,
     });
   }
 
   function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
     if (!dragInfo) return;
+
+    // Convert mouse position to transformed coordinates
+    const mouseX = (e.clientX - offset.x) / scale;
+    const mouseY = (e.clientY - offset.y) / scale;
 
     setHistory((prev) => ({
       ...prev,
@@ -404,8 +427,8 @@ export default function Home() {
         p.id === dragInfo.pinId
           ? {
               ...p,
-              x: e.clientX - dragInfo.offsetX,
-              y: e.clientY - dragInfo.offsetY,
+              x: mouseX - dragInfo.offsetX,
+              y: mouseY - dragInfo.offsetY,
             }
           : p
       ),
